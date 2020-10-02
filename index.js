@@ -15,30 +15,29 @@ const { sleep, strToHex, numToHex } = require("./utils");
 let cache = [
   {
     pair: "BTC/USD",
-    rate: 10510.16,
-    updated: { base: 1601620927, quote: 0 },
-    rawRate: { value: 10510160000000n, decimals: 9 },
+    rate: 10520.69,
+    updated: { base: 1601649605, quote: 0 },
+    rawRate: { value: 10520690000000n, decimals: 9 },
   },
   {
     pair: "ETH/USD",
-    rate: 344.25,
-    updated: { base: 1601620927, quote: 0 },
-    rawRate: { value: 344250000000n, decimals: 9 },
+    rate: 343.337,
+    updated: { base: 1601649605, quote: 0 },
+    rawRate: { value: 343337000000n, decimals: 9 },
   },
   {
-    pair: "DOT/USD",
-    rate: 4.174,
-    updated: { base: 1601620927, quote: 0 },
-    rawRate: { value: 4174000000n, decimals: 9 },
+    pair: "EGLD/USD",
+    rate: 9.3909385,
+    updated: { base: 1601649611, quote: 0 },
+    rawRate: { value: 9390938500n, decimals: 9 },
   },
 ];
 
 const getRawFromBand = async () => {
   const pairs = config.symbols.map((symbol) => `${symbol}/USD`);
   try {
-    const x = await config.bandchain.getReferenceData(pairs);
-    cache = [...x];
-    return x;
+    cache = await config.bandchain.getReferenceData(pairs);
+    return cache;
   } catch (e) {
     console.log(e);
     console.log("Used cache instead");
