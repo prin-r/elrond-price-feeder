@@ -1,0 +1,19 @@
+{
+  "name": "backend-dispatcher",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node ./index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@bandprotocol/bandchain.js": "^1.1.4",
+    "@elrondnetwork/erdjs": "^1.0.3-beta.5",
+    "axios": "^0.20.0",
+    "commander": "^6.1.0",
+    "dotenv": "^8.2.0"
+  }
+}
