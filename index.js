@@ -1,161 +1,153 @@
 const {
-  ProxyProvider,
-  Account,
-  GasLimit,
-  TransactionPayload,
-  Transaction,
   Address,
-  Balance,
-  ChainID,
-  GasPrice,
+  TransactionPayload,
+  ProxyProvider,
+  NetworkConfig,
+  Transaction,
+  BackendSigner,
+  GasLimit,
+  SmartContract,
+  ContractFunction,
+  Argument,
 } = require("@elrondnetwork/erdjs");
-const config = require("./config");
-const { sleep, strToHex, numToHex } = require("./utils");
 
-let cache = [
-  {
-    pair: "BTC/USD",
-    rate: 10520.69,
-    updated: { base: 1601649605, quote: 0 },
-    rawRate: { value: 10520690000000n, decimals: 9 },
-  },
-  {
-    pair: "ETH/USD",
-    rate: 343.337,
-    updated: { base: 1601649605, quote: 0 },
-    rawRate: { value: 343337000000n, decimals: 9 },
-  },
-  {
-    pair: "EGLD/USD",
-    rate: 9.3909385,
-    updated: { base: 1601649611, quote: 0 },
-    rawRate: { value: 9390938500n, decimals: 9 },
-  },
-];
+const axios = require("axios");
+const fs = require("fs");
+const dotenv = require("dotenv");
+dotenv.config();
 
-const getRawFromBand = async () => {
-  const pairs = config.symbols.map((symbol) => `${symbol}/USD`);
-  try {
-    cache = await config.bandchain.getReferenceData(pairs);
-    return cache;
-  } catch (e) {
-    console.log(e);
-    console.log("Used cache instead");
-    // return cache instead
-    return cache;
+const E9 = "1000000000";
+const symbols = process.env.SYMBOLS.split(",");
+const provider = new ProxyProvider(process.env.PROXY_URL);
+
+const sleep = async (ms) => new Promise((r) => setTimeout(r, ms));
+
+const numToHex = (x) => {
+  let y = Number(x).toString(16);
+  if (y.length % 2 === 0) {
+    return y;
   }
+  return "0" + y;
 };
 
-const getRelayData = async () => {
-  const results = await getRawFromBand();
-  const symbols = [...config.symbols];
-
-  console.log("Raw price data: ");
-  console.log(results);
-
-  let relayData = "";
-  for (let i = 0; i < symbols.length; i++) {
-    const [base, _] = results[i].pair.split("/");
-    if (base !== symbols[i]) {
-      throw "Error: results are not correspond with the config";
-    }
-
-    const partial = `${strToHex(base)}@${numToHex(
-      results[i].rawRate.value
-    )}@${numToHex(results[i].updated.base)}@${numToHex(42)}`;
-
-    relayData += i === 0 ? partial : `@${partial}`;
+const strToHex = (str) => {
+  var result = "";
+  for (var i = 0; i < str.length; i++) {
+    result += str.charCodeAt(i).toString(16);
   }
-  return "relay@" + relayData.toUpperCase();
+  return result;
 };
 
-const createTx = (account, data) =>
-  new Transaction({
-    nonce: account.nonce,
-    receiver: new Address(config.target_contract),
-    value: Balance.eGLD("0"),
-    gasPrice: new GasPrice(1000000000),
-    gasLimit: new GasLimit(20000000),
-    data: new TransactionPayload(data),
-    chainID: new ChainID(config.chain_id),
+const loadKey = () => {
+  let rawdata = fs.readFileSync(process.env.PATH_TO_KEY_FILE);
+  return JSON.parse(rawdata);
+};
+
+const createSigner = () => {
+  let signer = BackendSigner.fromWalletKey(
+    loadKey(),
+    process.env.PASSWORD_OF_KEY_FILE
+  );
+  return signer;
+};
+
+const queryState = async () => {
+  const sc = new SmartContract({
+    address: new Address(process.env.STD_REF_CONTRACT),
   });
 
-const simulateRelayTx = async (relayData) => {
-  console.log("🧪 Simulate Tx");
+  const { returnData } = await sc.runQuery(provider, {
+    func: new ContractFunction("getReferenceDataBulk"),
+    args: symbols.map((s) => [Argument.utf8(s), Argument.utf8("USD")]).flat(),
+  });
 
-  let provider = new ProxyProvider(config.proxy_url);
-  let signer = config.signer;
-  account = new Account(signer.getAddress());
-  await account.sync(provider);
-
-  // simulate tx execution
-  const txForSim = createTx(account, relayData);
-  await signer.sign(txForSim);
-  const { result: simResult } = await txForSim.simulate(provider);
-
-  console.log(simResult);
-
-  if (simResult.status !== "executed") {
-    throw `Error: status should be executed but got ${
-      simResult.status
-    } with fail reason ${simResult.failReason || `""`}`;
+  let res = [];
+  for (let i = 0; i < returnData.length; i += 3) {
+    res = [
+      ...res,
+      {
+        symbol: symbols[i / 3],
+        px: Number(returnData[i].asBigInt / BigInt(E9)),
+        resolve_time: returnData[i + 1].asNumber,
+      },
+    ];
   }
+
+  return res;
 };
 
-const relay = async (relayData) => {
-  try {
-    // simulate tx execution
-    await simulateRelayTx(relayData);
+const relay = async (priceData) => {
+  let signer = createSigner();
+  let relayer = await provider.getAccount(signer.getAddress());
 
-    // send tx
-    console.log("🚀 Sending Tx:");
-    console.log(`From ${config.signer.getAddress()}`);
+  let tx = new Transaction({
+    data: new TransactionPayload(priceData),
+    gasLimit: new GasLimit(process.env.GAS_LIMIT),
+    receiver: new Address(process.env.STD_REF_CONTRACT),
+  });
 
-    let provider = new ProxyProvider(config.proxy_url);
-    let signer = config.signer;
-    account = new Account(signer.getAddress());
-    await account.sync(provider);
+  tx.setNonce(relayer.nonce);
+  await signer.sign(tx);
 
-    const tx = createTx(account, relayData);
-    await signer.sign(tx);
-    const txHash = await tx.send(provider);
+  const txHash = await tx.send(provider);
 
-    // waiting for node to receive tx
-    const status = await (async () => {
-      await sleep(1000);
-      for (let i = 0; i < 10; i++) {
-        try {
-          const { status } = await provider.getTransactionStatus(txHash);
-          return status;
-        } catch (e) {
-          console.log(txHash.hash, e);
-        }
-        await sleep(1000);
-      }
-      throw "Error: fail to wait for node to receive tx";
-    })();
+  return txHash;
+};
 
-    if (status === "executed" || status === "received") {
-      console.log(`✨ Tx ${txHash.hash} has been ${status}`);
-      return;
+const getPricesFromBand = async () => {
+  const rawResults = await axios
+    .post(process.env.BAND_URL, { symbols, min_count: 3, ask_count: 4 })
+    .then((r) => r.data["result"]);
+
+  console.log(rawResults.map((e) => JSON.stringify(e)));
+
+  let relayData = "relay";
+
+  for ({ symbol, multiplier, px, request_id, resolve_time } of rawResults) {
+    if (multiplier !== E9) {
+      throw "multiplier is not equal 1_000_000_000";
     }
 
-    throw `Error: Tx ${txHash.hash} is ${status}`;
-  } catch (e) {
-    console.log("🚨", e);
+    relayData += `@${strToHex(symbol)}@${numToHex(px)}@${numToHex(
+      resolve_time
+    )}@${numToHex(request_id)}`;
   }
+
+  return relayData;
 };
 
 (async () => {
+  console.log("Start...");
+  await NetworkConfig.getDefault().sync(provider);
+  console.log("Connected with the network");
   while (true) {
-    // get relay data from band
-    const relayData = await getRelayData();
-    console.log("Encoded relay data: ");
-    console.log(relayData);
+    try {
+      console.log("Query reference data bulk from state of the contract ...");
+      const bulk = await queryState();
+      console.log(bulk.map((e) => JSON.stringify(e)));
 
-    // send relay data to elrond
-    await relay(relayData);
-    await sleep(config.interval);
-    console.log("=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=");
+      console.log("Getting prices from BAND ...");
+      const prices = await getPricesFromBand();
+      console.log("encoded prices: ", prices);
+
+      console.log("Sending relay to ELROND ...");
+      const txHash = await relay(prices);
+
+      console.log(txHash);
+    } catch (e) {
+      console.log(e);
+    }
+
+    let count = process.env.INTERVAL_SEC;
+    while (count > 0) {
+      process.stdout.clearLine();
+      process.stdout.cursorTo(0);
+      process.stdout.write("countdown: " + count);
+      await sleep(1000);
+      count--;
+    }
+    console.log(
+      "\n=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
+    );
   }
 })();
