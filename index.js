@@ -80,10 +80,21 @@ const relay = async (priceData) => {
   let signer = createSigner();
   let relayer = await provider.getAccount(signer.getAddress());
 
-  let tx = new Transaction({
-    data: new TransactionPayload(priceData),
+  const sc = new SmartContract({
+    address: new Address(process.env.STD_REF_CONTRACT),
+  });
+
+  const tx = await sc.call({
+    func: new ContractFunction("relay"),
+    args: priceData
+      .map((e) => [
+        Argument.utf8(e[0]),
+        Argument.number(e[1]),
+        Argument.number(e[2]),
+        Argument.number(e[3]),
+      ])
+      .flat(),
     gasLimit: new GasLimit(process.env.GAS_LIMIT),
-    receiver: new Address(process.env.STD_REF_CONTRACT),
   });
 
   tx.setNonce(relayer.nonce);
@@ -101,16 +112,14 @@ const getPricesFromBand = async () => {
 
   console.log(rawResults.map((e) => JSON.stringify(e)));
 
-  let relayData = "relay";
+  let relayData = [];
 
   for ({ symbol, multiplier, px, request_id, resolve_time } of rawResults) {
     if (multiplier !== E9) {
       throw "multiplier is not equal 1_000_000_000";
     }
 
-    relayData += `@${strToHex(symbol)}@${numToHex(px)}@${numToHex(
-      resolve_time
-    )}@${numToHex(request_id)}`;
+    relayData = [...relayData, [symbol, px, resolve_time, request_id]];
   }
 
   return relayData;
@@ -128,7 +137,6 @@ const getPricesFromBand = async () => {
 
       console.log("Getting prices from BAND ...");
       const prices = await getPricesFromBand();
-      console.log("encoded prices: ", prices);
 
       console.log("Sending relay to ELROND ...");
       const txHash = await relay(prices);
