@@ -1,9 +1,7 @@
 const {
   Address,
-  TransactionPayload,
   ProxyProvider,
   NetworkConfig,
-  Transaction,
   BackendSigner,
   GasLimit,
   SmartContract,
@@ -21,22 +19,6 @@ const symbols = process.env.SYMBOLS.split(",");
 const provider = new ProxyProvider(process.env.PROXY_URL);
 
 const sleep = async (ms) => new Promise((r) => setTimeout(r, ms));
-
-const numToHex = (x) => {
-  let y = Number(x).toString(16);
-  if (y.length % 2 === 0) {
-    return y;
-  }
-  return "0" + y;
-};
-
-const strToHex = (str) => {
-  var result = "";
-  for (var i = 0; i < str.length; i++) {
-    result += str.charCodeAt(i).toString(16);
-  }
-  return result;
-};
 
 const loadKey = () => {
   let rawdata = fs.readFileSync(process.env.PATH_TO_KEY_FILE);
