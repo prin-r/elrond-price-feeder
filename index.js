@@ -30,6 +30,7 @@ const countdown = async () => {
     await sleep(1000);
     count--;
   }
+  console.log("\n");
 };
 
 const createSigner = () => {
@@ -47,6 +48,8 @@ const createSigner = () => {
     return signer;
   }
 };
+
+const signer = createSigner();
 
 const queryState = async () => {
   const sc = new SmartContract({
@@ -74,7 +77,6 @@ const queryState = async () => {
 };
 
 const relay = async (priceData) => {
-  let signer = createSigner();
   let relayer = await provider.getAccount(signer.getAddress());
 
   const sc = new SmartContract({
@@ -119,7 +121,7 @@ const getPricesFromBand = async () => {
     relayData = [...relayData, [symbol, px, resolve_time, request_id]];
   }
 
-  return relayData;
+  return { relayData, rawResults };
 };
 
 (async () => {
@@ -129,10 +131,11 @@ const getPricesFromBand = async () => {
   while (true) {
     try {
       console.log("Getting prices from BAND ...");
-      const prices = await getPricesFromBand();
+      const { relayData, rawResults } = await getPricesFromBand();
 
       console.log("Sending relay to ELROND ...");
-      const txHash = await relay(prices);
+      console.log("By ", signer.getAddress().bech32());
+      const txHash = await relay(relayData);
       console.log(txHash);
 
       await countdown();
@@ -140,6 +143,26 @@ const getPricesFromBand = async () => {
       console.log("Query reference data bulk from state of the contract ...");
       const bulk = await queryState();
       console.log(bulk.map((e) => JSON.stringify(e)));
+
+      // compare input and output
+      if (rawResults.length !== bulk.length) {
+        throw `feeded data len is not equal to on-chain data len : ${rawResults.length} !== ${bulk.length}`;
+      }
+      for (let i = 0; i < rawResults.length; i++) {
+        if (
+          rawResults[i]["symbol"] !== bulk[i]["symbol"] ||
+          rawResults[i]["px"] !== bulk[i]["px"].toString() ||
+          rawResults[i]["resolve_time"] !== bulk[i]["resolve_time"].toString()
+        ) {
+          throw `Comparing fail at : ${rawResults[i]["symbol"]},${
+            rawResults[i]["px"]
+          },${rawResults[i]["resolve_time"]} vs ${bulk[i]["symbol"]},${bulk[i][
+            "px"
+          ].toString()},${bulk[i][
+            "resolve_time"
+          ].toString()} \nPlease check tx ${txHash}`;
+        }
+      }
     } catch (e) {
       console.log(e);
       await countdown();
