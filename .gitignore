@@ -27,3 +27,5 @@ node_modules/
 .npmrc
 
 build/
+
+.env
