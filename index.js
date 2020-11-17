@@ -3,6 +3,7 @@ const {
   ProxyProvider,
   NetworkConfig,
   BackendSigner,
+  SimpleSigner,
   GasLimit,
   SmartContract,
   ContractFunction,
@@ -20,17 +21,31 @@ const provider = new ProxyProvider(process.env.PROXY_URL);
 
 const sleep = async (ms) => new Promise((r) => setTimeout(r, ms));
 
-const loadKey = () => {
-  let rawdata = fs.readFileSync(process.env.PATH_TO_KEY_FILE);
-  return JSON.parse(rawdata);
+const countdown = async () => {
+  let count = process.env.INTERVAL_SEC;
+  while (count > 0) {
+    process.stdout.clearLine();
+    process.stdout.cursorTo(0);
+    process.stdout.write("countdown: " + count);
+    await sleep(1000);
+    count--;
+  }
 };
 
 const createSigner = () => {
-  let signer = BackendSigner.fromWalletKey(
-    loadKey(),
-    process.env.PASSWORD_OF_KEY_FILE
-  );
-  return signer;
+  const privk = process.env.PRIVATE_KEY;
+  if (privk) {
+    const signer = new SimpleSigner(privk.slice(0, 64));
+    return signer;
+  } else {
+    let rawdata = fs.readFileSync(process.env.PATH_TO_KEY_FILE);
+    const key = JSON.parse(rawdata);
+    const signer = BackendSigner.fromWalletKey(
+      key,
+      process.env.PASSWORD_OF_KEY_FILE
+    );
+    return signer;
+  }
 };
 
 const queryState = async () => {
@@ -113,29 +128,23 @@ const getPricesFromBand = async () => {
   console.log("Connected with the network");
   while (true) {
     try {
-      console.log("Query reference data bulk from state of the contract ...");
-      const bulk = await queryState();
-      console.log(bulk.map((e) => JSON.stringify(e)));
-
       console.log("Getting prices from BAND ...");
       const prices = await getPricesFromBand();
 
       console.log("Sending relay to ELROND ...");
       const txHash = await relay(prices);
-
       console.log(txHash);
+
+      await countdown();
+
+      console.log("Query reference data bulk from state of the contract ...");
+      const bulk = await queryState();
+      console.log(bulk.map((e) => JSON.stringify(e)));
     } catch (e) {
       console.log(e);
+      await countdown();
     }
 
-    let count = process.env.INTERVAL_SEC;
-    while (count > 0) {
-      process.stdout.clearLine();
-      process.stdout.cursorTo(0);
-      process.stdout.write("countdown: " + count);
-      await sleep(1000);
-      count--;
-    }
     console.log(
       "\n=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="
     );
