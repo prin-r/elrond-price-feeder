@@ -1,4 +1,7 @@
 
+# Env
+.env
+
 # Logs
 logs
 *.log
@@ -28,4 +31,3 @@ node_modules/
 
 build/
 
-.env
