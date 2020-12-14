@@ -106,7 +106,7 @@ const relay = async (priceData) => {
 
 const getPricesFromBand = async () => {
   const rawResults = await axios
-    .post(process.env.BAND_URL, { symbols, min_count: 3, ask_count: 4 })
+    .post(process.env.BAND_URL, { symbols, min_count: 10, ask_count: 16 })
     .then((r) => r.data["result"]);
 
   console.log(rawResults.map((e) => JSON.stringify(e)));
